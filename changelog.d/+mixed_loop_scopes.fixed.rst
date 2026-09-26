@@ -1,0 +1,1 @@
+Fixed a bug that caused a test to run in a different event loop than a requested fixture, when the fixture's loop scope was wider than the test's loop scope. The test's loop scope is now widened to the loop scope of the widest explicitly requested fixture, so the test and its fixtures share the same event loop
