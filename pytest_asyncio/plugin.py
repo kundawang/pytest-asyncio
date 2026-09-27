@@ -577,16 +577,33 @@ class PytestAsyncioFunction(Function):
         The effective scope is determined lazily. It is identical to to the
         `loop_scope` value of the closest `asyncio` pytest marker. If no such
         marker is present, the the loop scope is determined by the configuration
-        value of `asyncio_default_test_loop_scope`, instead.
+        value of `asyncio_default_test_loop_scope`, instead. The scope is
+        widened, when the item explicitly requests a fixture with a wider
+        loop scope, so that the test and the requested fixture run in the
+        same event loop.
         """
         marker = self.get_closest_marker("asyncio")
         assert marker is not None
         default_loop_scope = _get_default_test_loop_scope(self.config)
         loop_scope = marker.kwargs.get("loop_scope") or marker.kwargs.get("scope")
-        if loop_scope is None:
-            return default_loop_scope
-        else:
-            return loop_scope
+        widest_scope = Scope(loop_scope or default_loop_scope)
+        requested_fixture_names = list(self._fixtureinfo.argnames)
+        for usefixtures_mark in self.iter_markers("usefixtures"):
+            requested_fixture_names.extend(usefixtures_mark.args)
+        for fixture_name in requested_fixture_names:
+            fixturedefs = self._fixtureinfo.name2fixturedefs.get(fixture_name)
+            if not fixturedefs:
+                continue
+            # The last entry in the list is closest and the one used.
+            fixturedef = fixturedefs[-1]
+            fixture_loop_scope = _get_asyncio_fixture_loop_scope(
+                fixturedef, self.config
+            )
+            if fixture_loop_scope is None:
+                continue
+            if Scope(fixture_loop_scope) > widest_scope:
+                widest_scope = Scope(fixture_loop_scope)
+        return widest_scope.value
 
     @property
     def _synchronization_target_attr(self) -> tuple[object, str]:
@@ -917,20 +934,9 @@ def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
         warnings.warn(
             PytestDeprecationWarning(_EVENT_LOOP_POLICY_FIXTURE_DEPRECATION_WARNING),
         )
-    asyncio_mode = _get_asyncio_mode(request.config)
-    if not _is_asyncio_fixture_function(fixturedef.func):
-        if asyncio_mode == Mode.STRICT:
-            # Ignore async fixtures without explicit asyncio mark in strict mode
-            # This applies to pytest_trio fixtures, for example
-            return (yield)
-        if not _is_coroutine_or_asyncgen(fixturedef.func):
-            return (yield)
-    default_loop_scope = request.config.getini("asyncio_default_fixture_loop_scope")
-    loop_scope = (
-        getattr(fixturedef.func, "_loop_scope", None)
-        or default_loop_scope
-        or fixturedef.scope
-    )
+    loop_scope = _get_asyncio_fixture_loop_scope(fixturedef, request.config)
+    if loop_scope is None:
+        return (yield)
     runner_fixture_id = f"_{loop_scope}_scoped_runner"
     runner = request.getfixturevalue(runner_fixture_id)
     # Prevent the runner closing before the fixture's async teardown.
@@ -944,6 +950,28 @@ def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
         c.setattr(fixturedef, "func", synchronizer)
         hook_result = yield
     return hook_result
+
+
+def _get_asyncio_fixture_loop_scope(
+    fixturedef: FixtureDef, config: Config
+) -> _ScopeName | None:
+    """
+    Return the loop scope of the specified fixture, if it is an asynchronous
+    fixture handled by pytest-asyncio, or None, otherwise.
+    """
+    if not _is_asyncio_fixture_function(fixturedef.func):
+        if _get_asyncio_mode(config) == Mode.STRICT:
+            # Ignore async fixtures without explicit asyncio mark in strict mode
+            # This applies to pytest_trio fixtures, for example
+            return None
+        if not _is_coroutine_or_asyncgen(fixturedef.func):
+            return None
+    default_loop_scope = config.getini("asyncio_default_fixture_loop_scope")
+    return (
+        getattr(fixturedef.func, "_loop_scope", None)
+        or default_loop_scope
+        or fixturedef.scope
+    )
 
 
 _DUPLICATE_LOOP_SCOPE_DEFINITION_ERROR = """\

@@ -221,9 +221,9 @@ def test_asyncio_mark_allows_combining_class_scoped_fixture_with_function_scoped
                     loop = asyncio.get_running_loop()
 
                 @pytest.mark.asyncio(loop_scope="function")
-                async def test_runs_in_different_loop_as_fixture(self, async_fixture):
+                async def test_runs_in_same_loop_as_fixture(self, async_fixture):
                     global loop
-                    assert asyncio.get_running_loop() is not loop
+                    assert asyncio.get_running_loop() is loop
 
             """),
     )

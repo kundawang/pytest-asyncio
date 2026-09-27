@@ -220,9 +220,9 @@ def test_asyncio_mark_allows_combining_package_scoped_fixture_with_module_scoped
                 loop = asyncio.get_running_loop()
 
             @pytest.mark.asyncio(loop_scope="module")
-            async def test_runs_in_different_loop_as_fixture(async_fixture):
+            async def test_runs_in_same_loop_as_fixture(async_fixture):
                 global loop
-                assert asyncio.get_running_loop() is not loop
+                assert asyncio.get_running_loop() is loop
             """),
     )
     result = pytester.runpytest("--asyncio-mode=strict")
@@ -250,9 +250,9 @@ def test_asyncio_mark_allows_combining_package_scoped_fixture_with_class_scoped_
 
             @pytest.mark.asyncio(loop_scope="class")
             class TestMixedScopes:
-                async def test_runs_in_different_loop_as_fixture(self, async_fixture):
+                async def test_runs_in_same_loop_as_fixture(self, async_fixture):
                     global loop
-                    assert asyncio.get_running_loop() is not loop
+                    assert asyncio.get_running_loop() is loop
             """),
     )
     result = pytester.runpytest("--asyncio-mode=strict")
@@ -279,9 +279,9 @@ def test_asyncio_mark_allows_combining_package_scoped_fixture_with_function_scop
                 loop = asyncio.get_running_loop()
 
             @pytest.mark.asyncio
-            async def test_runs_in_different_loop_as_fixture(async_fixture):
+            async def test_runs_in_same_loop_as_fixture(async_fixture):
                 global loop
-                assert asyncio.get_running_loop() is not loop
+                assert asyncio.get_running_loop() is loop
             """),
     )
     result = pytester.runpytest("--asyncio-mode=strict")
